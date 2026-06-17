@@ -5,7 +5,7 @@
 #include <Adafruit_SSD1306.h>
 
 // #define ARM_BUTTON_PIN 6
-#define RESET_BUTTON_PIN 7
+// #define RESET_BUTTON_PIN 7
 
 #define OLED_SDA_PIN 8
 #define OLED_SCL_PIN 9
@@ -18,9 +18,9 @@
 #define JOYSTICK1_VRY_PIN 4
 #define JOYSTICK1_SW_PIN  20
 
-#define JOYSTICK2_VRX_PIN 3
-#define JOYSTICK2_VRY_PIN 4
-#define JOYSTICK2_SW_PIN  20
+#define JOYSTICK2_VRX_PIN 0
+#define JOYSTICK2_VRY_PIN 1
+#define JOYSTICK2_SW_PIN  10
 
 typedef struct
 {
@@ -104,21 +104,21 @@ void send_command()
     }
 }
 
-ThrottleState read_throttle_state(int xValue1, int yValue1)
+ThrottleState read_throttle_state(int xValue, int yValue)
 {
-    if ((xValue1 < 3950 && xValue1 > 3850) &&
-        (yValue1 < 3800 && yValue1 > 3700))
+    if ((xValue < 3900 && xValue > 3500) &&
+        (yValue < 3800 && yValue > 3500))
     {
         return ThrottleState::NEUTRAL;
     }
 
-    if (yValue1 > 3600)
+    if (yValue > 3600)
     {
-        if (xValue1 > 4000)
+        if (xValue > 4000)
         {
             return ThrottleState::UP;
         }
-        else if (xValue1 < 10)
+        else if (xValue < 30)
         {
             return ThrottleState::DOWN;
         }
@@ -127,33 +127,33 @@ ThrottleState read_throttle_state(int xValue1, int yValue1)
     return ThrottleState::UNKNOWN;
 }
 
-DirectionState read_direction_state(int xValue1, int yValue1)
+DirectionState read_direction_state(int xValue, int yValue)
 {
-    if ((xValue1 < 3950 && xValue1 > 3850) &&
-        (yValue1 < 3800 && yValue1 > 3700))
+    if ((xValue < 3900 && xValue > 3500) &&
+        (yValue < 3800 && yValue > 3500))
     {
         return DirectionState::NEUTRAL;
     }
 
-    if (yValue1 > 3600)
+    if (yValue > 3600)
     {
-        if (xValue1 > 4000)
+        if (xValue > 4000)
         {
             return DirectionState::FORWARD;
         }
-        else if (xValue1 < 10)
+        else if (xValue < 30)
         {
             return DirectionState::BACKWARD;
         }
     }
 
-    if (xValue1 > 3600)
+    if (xValue > 3600)
     {
-        if (yValue1 > 4000)
+        if (yValue > 4000)
         {
             return DirectionState::RIGHT;
         }
-        else if (yValue1 < 10)
+        else if (yValue < 30)
         {
             return DirectionState::LEFT;
         }
@@ -307,10 +307,10 @@ void setup()
     }
     
     // pinMode(ARM_BUTTON_PIN, INPUT_PULLUP);
-    pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
+    // pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
 
     pinMode(JOYSTICK1_SW_PIN, INPUT_PULLUP);
-    // pinMode(JOYSTICK2_SW_PIN, INPUT_PULLUP);
+    pinMode(JOYSTICK2_SW_PIN, INPUT_PULLUP);
 
     analogReadResolution(12);
 
@@ -332,15 +332,15 @@ void loop()
     const uint32_t now = millis();
 
     // bool current_arm_button_state = digitalRead(ARM_BUTTON_PIN);
-    bool current_reset_button_state = digitalRead(RESET_BUTTON_PIN);
+    // bool current_reset_button_state = digitalRead(RESET_BUTTON_PIN);
     bool current_joystick1_sw_state = digitalRead(JOYSTICK1_SW_PIN);
-    // bool current_joystick2_sw_state = digitalRead(JOYSTICK2_SW_PIN);
+    bool current_joystick2_sw_state = digitalRead(JOYSTICK2_SW_PIN);
 
     int xValue1 = analogRead(JOYSTICK1_VRX_PIN);
     int yValue1 = analogRead(JOYSTICK1_VRY_PIN);
 
-    // int xValue2 = analogRead(JOYSTICK2_VRX_PIN);
-    // int yValue2 = analogRead(JOYSTICK2_VRY_PIN);
+    int xValue2 = analogRead(JOYSTICK2_VRX_PIN);
+    int yValue2 = analogRead(JOYSTICK2_VRY_PIN);
 
     // handle arm button
     if ((last_joystick1_sw_state == HIGH) &&
@@ -373,11 +373,11 @@ void loop()
     last_joystick1_sw_state = current_joystick1_sw_state;
 
     // Handle reset button
-    if ((last_reset_button_state == HIGH) &&
-        (current_reset_button_state == LOW) &&
-        ((now - last_reset_button_press_time) > 200))
+    if ((last_joystick2_sw_state == HIGH) &&
+        (current_joystick2_sw_state == LOW) &&
+        ((now - last_joystick2_sw_press_time) > 200))
     {
-        last_reset_button_press_time = now;
+        last_joystick2_sw_press_time = now;
 
         Serial.println("Button Pressed Reset");
 
@@ -398,26 +398,26 @@ void loop()
         command_data.throttle_down = false;
     }
 
-    last_reset_button_state = current_reset_button_state;
+    last_joystick2_sw_state = current_joystick2_sw_state;
 
     if (is_armed == true)
     {
-        // ThrottleState current_throttle_state = read_throttle_state(xValue1, yValue1);
+        ThrottleState current_throttle_state = read_throttle_state(xValue1, yValue1);
 
-        // if (current_throttle_state != ThrottleState::UNKNOWN &&
-        //     current_throttle_state != last_throttle_state)
-        // {
-        //     command_data.arm = true;
-        //     command_data.reset = false;
+        if (current_throttle_state != ThrottleState::UNKNOWN &&
+            current_throttle_state != last_throttle_state)
+        {
+            command_data.arm = true;
+            command_data.reset = false;
 
-        //     apply_throttle_state_to_command(current_throttle_state);
+            apply_throttle_state_to_command(current_throttle_state);
 
-        //     send_command();
+            send_command();
 
-        //     last_throttle_state = current_throttle_state;
-        // }
+            last_throttle_state = current_throttle_state;
+        }
 
-        DirectionState current_direction_state = read_direction_state(xValue1, yValue1);
+        DirectionState current_direction_state = read_direction_state(xValue2, yValue2);
 
         if (current_direction_state != DirectionState::UNKNOWN &&
             current_direction_state != last_direction_state)

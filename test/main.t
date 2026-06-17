@@ -1,17 +1,26 @@
 #include <Arduino.h>
 #include <esp_now.h>
 #include <WiFi.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
 // #define ARM_BUTTON_PIN 6
-#define RESET_BUTTON_PIN 7
+// #define RESET_BUTTON_PIN 7
+
+#define OLED_SDA_PIN 8
+#define OLED_SCL_PIN 9
+#define OLED_RESET_PIN -1
+
+#define OLED_SCREEN_WIDTH 128
+#define OLED_SCREEN_HEIGHT 64
 
 #define JOYSTICK1_VRX_PIN 3
 #define JOYSTICK1_VRY_PIN 4
 #define JOYSTICK1_SW_PIN  20
 
-#define JOYSTICK2_VRX_PIN 3
-#define JOYSTICK2_VRY_PIN 4
-#define JOYSTICK2_SW_PIN  20
+#define JOYSTICK2_VRX_PIN 0
+#define JOYSTICK2_VRY_PIN 1
+#define JOYSTICK2_SW_PIN  10
 
 typedef struct
 {
@@ -57,10 +66,10 @@ enum class DirectionState
 static attitude_data_packet_t attitude_data;
 static command_data_packet_t command_data;
 
-static uint32_t last_arm_button_press_time = 0;
-static uint32_t last_reset_button_press_time = 0;
-static uint32_t last_joystick1_sw_press_time = 0;
-static uint32_t last_joystick2_sw_press_time = 0;
+static uint32_t last_arm_button_press_time = 0u;
+static uint32_t last_reset_button_press_time = 0u;
+static uint32_t last_joystick1_sw_press_time = 0u;
+static uint32_t last_joystick2_sw_press_time = 0u;
 
 static bool last_arm_button_state = HIGH;
 static bool last_reset_button_state = HIGH;
@@ -76,6 +85,11 @@ static DirectionState last_direction_state = DirectionState::UNKNOWN;
 // replace with your drone's mac address
 static uint8_t drone_address[] = {0xEC, 0xDA, 0x3B, 0xBF, 0x7B, 0xC4};
 
+Adafruit_SSD1306 display(OLED_SCREEN_WIDTH, OLED_SCREEN_HEIGHT, &Wire, OLED_RESET_PIN);
+
+static uint32_t display_update_interval = 50u;
+static uint32_t last_display_update_time = 0u;
+
 void send_command()
 {
     esp_err_t result = esp_now_send(
@@ -90,21 +104,21 @@ void send_command()
     }
 }
 
-ThrottleState read_throttle_state(int xValue1, int yValue1)
+ThrottleState read_throttle_state(int xValue, int yValue)
 {
-    if ((xValue1 < 3950 && xValue1 > 3850) &&
-        (yValue1 < 3800 && yValue1 > 3700))
+    if ((xValue < 3950 && xValue > 3850) &&
+        (yValue < 3800 && yValue > 3700))
     {
         return ThrottleState::NEUTRAL;
     }
 
-    if (yValue1 > 3600)
+    if (yValue > 3600)
     {
-        if (xValue1 > 4000)
+        if (xValue > 4000)
         {
             return ThrottleState::UP;
         }
-        else if (xValue1 < 10)
+        else if (xValue < 10)
         {
             return ThrottleState::DOWN;
         }
@@ -113,33 +127,33 @@ ThrottleState read_throttle_state(int xValue1, int yValue1)
     return ThrottleState::UNKNOWN;
 }
 
-DirectionState read_direction_state(int xValue1, int yValue1)
+DirectionState read_direction_state(int xValue, int yValue)
 {
-    if ((xValue1 < 3950 && xValue1 > 3850) &&
-        (yValue1 < 3800 && yValue1 > 3700))
+    if ((xValue < 3950 && xValue > 3850) &&
+        (yValue < 3800 && yValue > 3700))
     {
         return DirectionState::NEUTRAL;
     }
 
-    if (yValue1 > 3600)
+    if (yValue > 3600)
     {
-        if (xValue1 > 4000)
+        if (xValue > 4000)
         {
             return DirectionState::FORWARD;
         }
-        else if (xValue1 < 10)
+        else if (xValue < 10)
         {
             return DirectionState::BACKWARD;
         }
     }
 
-    if (xValue1 > 3600)
+    if (xValue > 3600)
     {
-        if (yValue1 > 4000)
+        if (yValue > 4000)
         {
             return DirectionState::RIGHT;
         }
-        else if (yValue1 < 10)
+        else if (yValue < 10)
         {
             return DirectionState::LEFT;
         }
@@ -293,12 +307,24 @@ void setup()
     }
     
     // pinMode(ARM_BUTTON_PIN, INPUT_PULLUP);
-    pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
+    // pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
 
     pinMode(JOYSTICK1_SW_PIN, INPUT_PULLUP);
-    // pinMode(JOYSTICK2_SW_PIN, INPUT_PULLUP);
+    pinMode(JOYSTICK2_SW_PIN, INPUT_PULLUP);
 
     analogReadResolution(12);
+
+    Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
+
+    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) 
+    {
+        Serial.println(F("SSD1306 allocation failed"));
+        for(;;) {}
+    }
+
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
 }
 
 void loop() 
@@ -306,15 +332,15 @@ void loop()
     const uint32_t now = millis();
 
     // bool current_arm_button_state = digitalRead(ARM_BUTTON_PIN);
-    bool current_reset_button_state = digitalRead(RESET_BUTTON_PIN);
+    // bool current_reset_button_state = digitalRead(RESET_BUTTON_PIN);
     bool current_joystick1_sw_state = digitalRead(JOYSTICK1_SW_PIN);
-    // bool current_joystick2_sw_state = digitalRead(JOYSTICK2_SW_PIN);
+    bool current_joystick2_sw_state = digitalRead(JOYSTICK2_SW_PIN);
 
     int xValue1 = analogRead(JOYSTICK1_VRX_PIN);
     int yValue1 = analogRead(JOYSTICK1_VRY_PIN);
 
-    // int xValue2 = analogRead(JOYSTICK2_VRX_PIN);
-    // int yValue2 = analogRead(JOYSTICK2_VRY_PIN);
+    int xValue2 = analogRead(JOYSTICK2_VRX_PIN);
+    int yValue2 = analogRead(JOYSTICK2_VRY_PIN);
 
     // handle arm button
     if ((last_joystick1_sw_state == HIGH) &&
@@ -347,11 +373,11 @@ void loop()
     last_joystick1_sw_state = current_joystick1_sw_state;
 
     // Handle reset button
-    if ((last_reset_button_state == HIGH) &&
-        (current_reset_button_state == LOW) &&
-        ((now - last_reset_button_press_time) > 200))
+    if ((last_joystick2_sw_state == HIGH) &&
+        (current_joystick2_sw_state == LOW) &&
+        ((now - last_joystick2_sw_press_time) > 200))
     {
-        last_reset_button_press_time = now;
+        last_joystick2_sw_press_time = now;
 
         Serial.println("Button Pressed Reset");
 
@@ -372,26 +398,26 @@ void loop()
         command_data.throttle_down = false;
     }
 
-    last_reset_button_state = current_reset_button_state;
+    last_joystick2_sw_state = current_joystick2_sw_state;
 
     if (is_armed == true)
     {
-        // ThrottleState current_throttle_state = read_throttle_state(xValue1, yValue1);
+        ThrottleState current_throttle_state = read_throttle_state(xValue1, yValue1);
 
-        // if (current_throttle_state != ThrottleState::UNKNOWN &&
-        //     current_throttle_state != last_throttle_state)
-        // {
-        //     command_data.arm = true;
-        //     command_data.reset = false;
+        if (current_throttle_state != ThrottleState::UNKNOWN &&
+            current_throttle_state != last_throttle_state)
+        {
+            command_data.arm = true;
+            command_data.reset = false;
 
-        //     apply_throttle_state_to_command(current_throttle_state);
+            apply_throttle_state_to_command(current_throttle_state);
 
-        //     send_command();
+            send_command();
 
-        //     last_throttle_state = current_throttle_state;
-        // }
+            last_throttle_state = current_throttle_state;
+        }
 
-        DirectionState current_direction_state = read_direction_state(xValue1, yValue1);
+        DirectionState current_direction_state = read_direction_state(xValue2, yValue2);
 
         if (current_direction_state != DirectionState::UNKNOWN &&
             current_direction_state != last_direction_state)
@@ -405,5 +431,57 @@ void loop()
 
             last_direction_state = current_direction_state;
         }
+    }
+
+    if (now - last_display_update_time >= display_update_interval)
+    {
+        last_display_update_time = now;
+
+        display.clearDisplay();
+
+        display.setCursor(0, 0);
+        display.print("Arm: ");
+        display.println(is_armed ? "ON" : "OFF");
+
+        display.setCursor(0, 10);
+        display.print("Throttle: ");
+        display.println(command_data.throttle_up ? "UP" : (command_data.throttle_down ? "DOWN" : "NEUTRAL"));
+
+        display.setCursor(0, 20);
+        display.print("Direction: ");
+        if (command_data.direction_forward)
+        {
+            display.println("FORWARD");
+        }
+        else if (command_data.direction_backward)
+        {
+            display.println("BACKWARD");
+        }
+        else if (command_data.direction_left)
+        {
+            display.println("LEFT");
+        }
+        else if (command_data.direction_right)
+        {
+            display.println("RIGHT");
+        }
+        else
+        {
+            display.println("NEUTRAL");
+        }
+
+        display.setCursor(0, 30);
+        display.print("Roll: ");
+        display.println(attitude_data.roll);
+
+        display.setCursor(0, 40);
+        display.print("Pitch: ");
+        display.println(attitude_data.pitch);
+
+        display.setCursor(0, 50);
+        display.print("Yaw: ");
+        display.println(attitude_data.yaw);
+
+        display.display();
     }
 }

@@ -40,14 +40,14 @@ void loop() {
         Serial.print("RELEASED");
     }
 
-    if ((xValue < 3950 && xValue > 3850) && (yValue < 3800 && yValue > 3700)) 
+    if ((xValue < 3900 && xValue > 3500) && (yValue < 3800 && yValue > 3500)) 
     {
         Serial.print(" | Direction: CENTER");
     }
 
     if (xValue > 3600) 
     {
-        if (yValue < 10)
+        if (yValue < 30)
         {
             Serial.println(" | Direction: LEFT");
         }
@@ -63,7 +63,7 @@ void loop() {
         {
             Serial.println(" | Direction: UP");
         }
-        else if (xValue < 10)
+        else if (xValue < 30)
         {
             Serial.println(" | Direction: DOWN");
         }
