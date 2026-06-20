@@ -248,8 +248,16 @@ void apply_direction_state_to_command(DirectionState direction_state)
     }
 }
 
-void on_data_recv(const uint8_t * mac, const uint8_t *data, int len) 
+void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
 {
+    (void)info;
+
+    if (data == nullptr || len != sizeof(attitude_data_packet_t))
+    {
+        Serial.println("Invalid attitude packet");
+        return;
+    }
+
     memcpy(&attitude_data, data, sizeof(attitude_data));
 
     // Serial.print("\r\nBytes received: ");
@@ -263,19 +271,21 @@ void on_data_recv(const uint8_t * mac, const uint8_t *data, int len)
     // Serial.println();
 }
 
-void on_data_sent(const uint8_t *mac_addr, esp_now_send_status_t status)
+void on_data_sent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status)
 {
+    (void)tx_info;
+
     Serial.print("\nLast Packet Send Status: ");
 
-    if (status == ESP_NOW_SEND_SUCCESS) 
+    if (status == ESP_NOW_SEND_SUCCESS)
     {
         Serial.println("Delivery Success");
-    } 
-    else 
+    }
+    else
     {
         Serial.println("Delivery Fail");
     }
-} 
+}
 
 void setup() 
 {
@@ -283,6 +293,7 @@ void setup()
     delay(2000);
 
     WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
 
     if (esp_now_init() != ESP_OK) 
     {
