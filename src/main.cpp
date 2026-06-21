@@ -24,6 +24,12 @@
 
 typedef struct
 {
+    uint32_t counter;
+}
+heartbeat_data_packet_t;
+
+typedef struct
+{
     float roll;
     float pitch;
     float yaw;
@@ -65,6 +71,7 @@ enum class DirectionState
 
 static attitude_data_packet_t attitude_data;
 static command_data_packet_t command_data;
+static heartbeat_data_packet_t heartbeat_data;
 
 static uint32_t last_arm_button_press_time = 0u;
 static uint32_t last_reset_button_press_time = 0u;
@@ -83,12 +90,15 @@ static ThrottleState last_throttle_state = ThrottleState::UNKNOWN;
 static DirectionState last_direction_state = DirectionState::UNKNOWN;
 
 // replace with your drone's mac address
-static uint8_t drone_address[] = {0xEC, 0xDA, 0x3B, 0xBF, 0x7B, 0xC4};
+static constexpr uint8_t drone_address[] = {0xEC, 0xDA, 0x3B, 0xBF, 0x7B, 0xC4};
 
 Adafruit_SSD1306 display(OLED_SCREEN_WIDTH, OLED_SCREEN_HEIGHT, &Wire, OLED_RESET_PIN);
 
-static uint32_t display_update_interval = 50u;
+static constexpr uint32_t display_update_interval = 50u;
 static uint32_t last_display_update_time = 0u;
+
+static constexpr uint32_t heartbeat_update_interval = 50u;
+static uint32_t last_heartbeat_data_send_time = 0u;
 
 void send_command()
 {
@@ -101,6 +111,22 @@ void send_command()
     if (result != ESP_OK)
     {
         Serial.println("ESP-NOW send failed");
+    }
+}
+
+void send_heartbeat()
+{
+    heartbeat_data.counter++;
+
+    esp_err_t result = esp_now_send(
+        drone_address,
+        reinterpret_cast<uint8_t *>(&heartbeat_data),
+        sizeof(heartbeat_data)
+    );
+
+    if (result != ESP_OK)
+    {
+        Serial.println("ESP-NOW heartbeat send failed");
     }
 }
 
@@ -274,23 +300,24 @@ void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
 void on_data_sent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status)
 {
     (void)tx_info;
+    (void)status;
 
-    Serial.print("\nLast Packet Send Status: ");
+    // Serial.print("\nLast Packet Send Status: ");
 
-    if (status == ESP_NOW_SEND_SUCCESS)
-    {
-        Serial.println("Delivery Success");
-    }
-    else
-    {
-        Serial.println("Delivery Fail");
-    }
+    // if (status == ESP_NOW_SEND_SUCCESS)
+    // {
+    //     Serial.println("Delivery Success");
+    // }
+    // else
+    // {
+    //     Serial.println("Delivery Fail");
+    // }
 }
 
 void setup() 
 {
-    Serial.begin(115200);
-    delay(2000);
+    // Serial.begin(115200);
+    // delay(2000);
 
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
@@ -442,6 +469,12 @@ void loop()
 
             last_direction_state = current_direction_state;
         }
+    }
+
+    if (now - last_heartbeat_data_send_time >= heartbeat_update_interval)
+    {
+        last_heartbeat_data_send_time = now;
+        send_heartbeat();
     }
 
     if (now - last_display_update_time >= display_update_interval)
